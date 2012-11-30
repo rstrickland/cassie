@@ -26,7 +26,7 @@ import java.nio.ByteBuffer
 import java.util.Collections.{ singleton => singletonJSet }
 import java.util.{ ArrayList => JArrayList, HashMap => JHashMap, Iterator => JIterator, List => JList, Map => JMap, Set => JSet }
 import org.apache.cassandra.finagle.thrift
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 
 /**
  * A readable, writable column family with batching capabilities. This is a
@@ -120,7 +120,7 @@ case class CounterColumnFamily[Key, Name](
     ) {
         _.get_slice(keyEncoded, cp, pred, readConsistency.level)
       } map { result =>
-        result.map { cosc =>
+        result.asScala.map { cosc =>
           CounterColumn.convert(nameCodec, cosc)
         }
       }
@@ -163,7 +163,7 @@ case class CounterColumnFamily[Key, Name](
     columnName: Name): Future[JMap[Key, CounterColumn[Name]]] = {
     multigetColumns(keys, singletonJSet(columnName)).map { rows =>
       val cols: JMap[Key, CounterColumn[Name]] = new JHashMap(rows.size)
-      for (rowEntry <- collectionAsScalaIterable(rows.entrySet))
+      for (rowEntry <- rows.entrySet.asScala)
         if (!rowEntry.getValue.isEmpty) {
           cols.put(rowEntry.getKey, rowEntry.getValue.get(columnName))
         }
@@ -195,9 +195,9 @@ case class CounterColumnFamily[Key, Name](
       _.multiget_slice(encodedKeys, cp, pred, readConsistency.level)
     }.map { result =>
       val rows: JMap[Key, JMap[Name, CounterColumn[Name]]] = new JHashMap(result.size)
-      for (rowEntry <- collectionAsScalaIterable(result.entrySet)) {
+      for (rowEntry <- result.entrySet.asScala) {
         val cols: JMap[Name, CounterColumn[Name]] = new JHashMap(rowEntry.getValue.size)
-        for (counter <- collectionAsScalaIterable(rowEntry.getValue)) {
+        for (counter <- rowEntry.getValue.asScala) {
           val col = CounterColumn.convert(nameCodec, counter.getCounter_column)
           cols.put(col.name, col)
         }
@@ -443,7 +443,7 @@ case class CounterColumnFamily[Key, Name](
       _.get_slice(keyEncoded, cp, pred, readConsistency.level)
     } map { result =>
       val cols: JMap[Name, CounterColumn[Name]] = new JHashMap(result.size)
-      for (c <- result.iterator) {
+      for (c <- result.asScala.iterator) {
         val col = CounterColumn.convert(nameCodec, c.getCounter_column)
         cols.put(col.name, col)
       }
@@ -463,10 +463,10 @@ case class CounterColumnFamily[Key, Name](
       _.get_range_slices(cp, pred, range, readConsistency.level)
     } map { slices =>
       val buf: JList[(Key, JList[CounterColumn[Name]])] = new JArrayList[(Key, JList[CounterColumn[Name]])](slices.size)
-      slices.foreach { ks =>
+      slices.asScala.foreach { ks =>
         val key = keyCodec.decode(ks.key)
         val cols = new JArrayList[CounterColumn[Name]](ks.columns.size)
-        ks.columns.foreach { col =>
+        ks.columns.asScala.foreach { col =>
           cols.add(CounterColumn.convert(nameCodec, col))
         }
         buf.add((key, cols))

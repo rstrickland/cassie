@@ -21,7 +21,7 @@ import com.twitter.finagle.tracing.{ Tracer, NullTracer }
 import com.twitter.logging.Logger
 import com.twitter.util.Duration
 import java.net.{ SocketAddress, InetSocketAddress }
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 
 /**
  * A Cassandra cluster.
@@ -53,7 +53,7 @@ class Cluster(seedHosts: Set[String], seedPort: Int, stats: StatsReceiver) exten
    * @param seedHosts A collection of seed host addresses. The port number is assumed to be 9160
    */
   def this(seedHosts: java.util.Collection[String]) =
-    this(collectionAsScalaIterable(seedHosts).toSet, 9160, NullStatsReceiver)
+    this(seedHosts.asScala.toSet, 9160, NullStatsReceiver)
 
   /**
    * Returns a  [[com.twitter.cassie.KeyspaceBuilder]] instance.

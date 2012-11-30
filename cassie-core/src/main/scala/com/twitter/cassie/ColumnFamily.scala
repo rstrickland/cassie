@@ -27,7 +27,7 @@ import java.util.Collections.{ singleton => singletonJSet }
 import java.util.{ArrayList => JArrayList, HashMap => JHashMap, HashSet => JHashSet,
   List => JList, Map => JMap, Set => JSet}
 import org.apache.cassandra.finagle.thrift
-import scala.collection.JavaConversions._ // TODO get rid of this
+import scala.collection.JavaConverters._
 
 /**
  * A readable, writable column family with batching capabilities. This is a
@@ -181,7 +181,7 @@ extends BaseColumnFamily(keyspace, name, provider, stats) {
   def multigetColumn(keys: JSet[Key], columnName: Name): Future[JMap[Key, Column[Name, Value]]] = {
     multigetColumns(keys, singletonJSet(columnName)).map { rows =>
       val cols: JMap[Key, Column[Name, Value]] = new JHashMap(rows.size)
-      for (rowEntry <- collectionAsScalaIterable(rows.entrySet))
+      for (rowEntry <- rows.entrySet.asScala)
         if (!rowEntry.getValue.isEmpty)
           cols.put(rowEntry.getKey, rowEntry.getValue.get(columnName))
       cols
@@ -228,9 +228,9 @@ extends BaseColumnFamily(keyspace, name, provider, stats) {
         _.multiget_slice(encodedKeys, cp, pred, readConsistency.level)
       }.map { result =>
         val rows: JMap[Key, JMap[Name, Column[Name, Value]]] = new JHashMap(result.size)
-        for (rowEntry <- collectionAsScalaIterable(result.entrySet)) {
+        for (rowEntry <- result.entrySet.asScala) {
           val cols = new JHashMap[Name, Column[Name, Value]](rowEntry.getValue.size)
-          for (cosc <- collectionAsScalaIterable(rowEntry.getValue)) {
+          for (cosc <- rowEntry.getValue.asScala) {
             val col = Column.convert(nameCodec, valueCodec, cosc)
             cols.put(col.name, col)
           }
@@ -281,7 +281,7 @@ extends BaseColumnFamily(keyspace, name, provider, stats) {
       _.multiget_count(encodedKeys, cp, pred, readConsistency.level)
     } map { result =>
       val counts: JMap[Name, java.lang.Integer] = new JHashMap(result.size)
-      for (key <- collectionAsScalaIterable(result.keySet)) {
+      for (key <- result.keySet.asScala) {
         counts.put(nameCodec.decode(key), result.get(key))
       }
       counts
@@ -527,7 +527,7 @@ extends BaseColumnFamily(keyspace, name, provider, stats) {
       _.get_slice(keyEncoded, cp, pred, readConsistency.level)
     } map { result =>
       val cols: JMap[Name, Column[Name, Value]] = new JHashMap(result.size)
-      for (cosc <- result.iterator) {
+      for (cosc <- result.iterator.asScala) {
         val col = Column.convert(nameCodec, valueCodec, cosc)
         cols.put(col.name, col)
       }
@@ -543,7 +543,7 @@ extends BaseColumnFamily(keyspace, name, provider, stats) {
       "readconsistency" -> readConsistency.level.toString)) {
       _.get_slice(keyEncoded, cp, pred, readConsistency.level)
     } map { result =>
-      result.map { cosc =>
+      result.asScala.map { cosc =>
         Column.convert(nameCodec, valueCodec, cosc)
       }
     }
@@ -561,10 +561,10 @@ extends BaseColumnFamily(keyspace, name, provider, stats) {
       _.get_range_slices(cp, pred, range, readConsistency.level)
     } map { slices =>
       val buf: JList[(Key, JList[Column[Name, Value]])] = new JArrayList[(Key, JList[Column[Name, Value]])](slices.size)
-      slices.foreach { ks =>
+      slices.asScala.foreach { ks =>
         val key = keyCodec.decode(ks.key)
         val cols = new JArrayList[Column[Name, Value]](ks.columns.size)
-        ks.columns.foreach { col =>
+        ks.columns.asScala.foreach { col =>
           cols.add(Column.convert(nameCodec, valueCodec, col))
         }
         buf.add((key, cols))

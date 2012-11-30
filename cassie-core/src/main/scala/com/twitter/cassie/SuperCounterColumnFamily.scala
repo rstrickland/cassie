@@ -25,7 +25,7 @@ import java.nio.ByteBuffer
 import java.util.Collections.{ singleton => singletonJSet }
 import java.util.{ArrayList => JArrayList,HashMap => JHashMap,Iterator => JIterator,List => JList,Map => JMap,Set => JSet}
 import org.apache.cassandra.finagle.thrift
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 
 object SuperCounterColumnFamily {
   private val log = Logger.get(this.getClass)
@@ -78,11 +78,11 @@ case class SuperCounterColumnFamily[Key, Name, SubName](
       _.multiget_slice(encodedKeys, cp, pred, readConsistency.level)
     }.map { result =>
       val rows: JMap[Key, JMap[Name, JMap[SubName, CounterColumn[SubName]]]] = new JHashMap(result.size)
-      for (rowEntry <- collectionAsScalaIterable(result.entrySet)) {
+      for (rowEntry <- result.entrySet.asScala) {
         val sCols: JMap[Name, JMap[SubName, CounterColumn[SubName]]] = new JHashMap(rowEntry.getValue.size)
-        for (scol <- collectionAsScalaIterable(rowEntry.getValue)) {
+        for (scol <- rowEntry.getValue.asScala) {
           val cols: JMap[SubName, CounterColumn[SubName]] = new JHashMap(scol.getCounter_super_column.columns.size)
-          for (counter <- collectionAsScalaIterable(scol.getCounter_super_column().columns)) {
+          for (counter <- scol.getCounter_super_column().columns.asScala) {
             val col = CounterColumn.convert(subNameCodec, counter)
             cols.put(col.name, col)
           }

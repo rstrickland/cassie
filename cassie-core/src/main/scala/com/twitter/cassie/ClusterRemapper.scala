@@ -26,7 +26,7 @@ import com.twitter.logging.Logger
 import com.twitter.util.{ Duration, Future, Promise, Return, Time, JavaTimer }
 import java.io.IOException
 import java.net.{ InetSocketAddress, SocketAddress }
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.collection.SeqProxy
 import scala.util.parsing.json.JSON
 
@@ -54,8 +54,8 @@ private class ClusterRemapper(keyspace: String, seeds: Seq[InetSocketAddress], r
       log.debug("Received: %s", ring)
       val (added, removed) = synchronized {
         val oldSet = hosts.toSet
-        hosts = ring.flatMap { h =>
-          collectionAsScalaIterable(h.endpoints).map {
+        hosts = ring.asScala.flatMap { h =>
+          h.endpoints.asScala.map {
             new InetSocketAddress(_, port)
           }
         }.toSeq
