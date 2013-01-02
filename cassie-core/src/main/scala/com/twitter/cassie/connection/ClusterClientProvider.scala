@@ -15,17 +15,14 @@ package com.twitter.cassie.connection
 // limitations under the License.
 
 import com.twitter.finagle.builder.ClientBuilder
-import com.twitter.finagle.{Service, ServiceFactory}
+import com.twitter.finagle.ServiceFactory
 import com.twitter.finagle.service.{ Backoff, RetryPolicy => FinagleRetryPolicy }
-import com.twitter.finagle.stats.{ StatsReceiver, NullStatsReceiver }
+import com.twitter.finagle.stats.StatsReceiver
 import com.twitter.finagle.thrift.{ ThriftClientRequest, ThriftClientFramedCodec }
-import com.twitter.finagle.tracing.{ Tracer, NullTracer }
-import com.twitter.finagle.{ ChannelException, CodecFactory, Codec, ClientCodecConfig, RequestTimeoutException, WriteException }
-import com.twitter.util.Duration
+import com.twitter.finagle.tracing.Tracer
+import com.twitter.finagle.{ ChannelException, CodecFactory, ClientCodecConfig, RequestTimeoutException, WriteException }
 import com.twitter.util.{ Duration, Future, Throw, Timer, TimerTask, Time, Try }
-import com.twitter.util.{ Future, Throw, Timer, TimerTask, Time, Try }
-import java.net.InetSocketAddress
-import java.net.{ SocketAddress }
+import java.net.SocketAddress
 import java.util.concurrent.TimeUnit
 import org.apache.cassandra.finagle.thrift.Cassandra.ServiceToClient
 import org.apache.cassandra.finagle.thrift.{ UnavailableException, TimedOutException }
@@ -38,18 +35,21 @@ object RetryPolicy {
   val NonIdempotent = RetryPolicy()
 }
 
-private[cassie] class ClusterClientProvider(val hosts: CCluster[SocketAddress],
+private[cassie] class ClusterClientProvider(
+  val hosts: CCluster[SocketAddress],
   val keyspace: String,
-  val retries: Int = 5,
-  val timeout: Duration = Duration(5, TimeUnit.SECONDS),
-  val requestTimeout: Duration = Duration(1, TimeUnit.SECONDS),
-  val connectTimeout: Duration = Duration(1, TimeUnit.SECONDS),
-  val minConnectionsPerHost: Int = 1,
-  val maxConnectionsPerHost: Int = 5,
-  val hostConnectionMaxWaiters: Int = 100,
-  val statsReceiver: StatsReceiver = NullStatsReceiver,
-  val tracerFactory: Tracer.Factory = NullTracer.factory,
-  val retryPolicy: RetryPolicy = RetryPolicy.Idempotent) extends ClientProvider {
+  val retries: Int,
+  val timeout: Duration,
+  val requestTimeout: Duration,
+  val connectTimeout: Duration,
+  val minConnectionsPerHost: Int,
+  val maxConnectionsPerHost: Int,
+  val hostConnectionMaxWaiters: Int,
+  val statsReceiver: StatsReceiver,
+  val tracerFactory: Tracer.Factory,
+  val retryPolicy: RetryPolicy = RetryPolicy.Idempotent,
+  val failFast: Boolean = true
+) extends ClientProvider {
 
   implicit val fakeTimer = new Timer {
     def schedule(when: Time)(f: => Unit): TimerTask = throw new Exception("illegal use!")
@@ -59,7 +59,7 @@ private[cassie] class ClusterClientProvider(val hosts: CCluster[SocketAddress],
 
   /** Record the given exception, and return true. */
   private def recordRetryable(e: Exception): Boolean = {
-    statsReceiver.counter(e.getClass.getSimpleName()).incr
+    statsReceiver.counter(e.getClass.getSimpleName()).incr()
     true
   }
 
@@ -83,7 +83,7 @@ private[cassie] class ClusterClientProvider(val hosts: CCluster[SocketAddress],
       }
   }
 
-  private var service = ClientBuilder()
+  private val service = ClientBuilder()
     .cluster(hosts)
     .name("cassie")
     .codec(CassandraThriftFramedCodec())
@@ -97,6 +97,7 @@ private[cassie] class ClusterClientProvider(val hosts: CCluster[SocketAddress],
     .reportTo(statsReceiver)
     .tracerFactory(tracerFactory)
     .hostConnectionMaxWaiters(hostConnectionMaxWaiters)
+    .expFailFast(failFast)
     .build()
 
   private val client = new ServiceToClient(service, new TBinaryProtocol.Factory())
@@ -127,7 +128,8 @@ private[cassie] class ClusterClientProvider(val hosts: CCluster[SocketAddress],
     }
   }
 
-  class CassandraThriftFramedCodec(protocolFactory: TProtocolFactory, config: ClientCodecConfig) extends ThriftClientFramedCodec(protocolFactory: TProtocolFactory, config: ClientCodecConfig) {
+  class CassandraThriftFramedCodec(protocolFactory: TProtocolFactory, config: ClientCodecConfig)
+  extends ThriftClientFramedCodec(protocolFactory: TProtocolFactory, config: ClientCodecConfig, None, false) {
     override def prepareConnFactory(factory: ServiceFactory[ThriftClientRequest, Array[Byte]]) = {
       val keyspacedSetFactory = factory flatMap { service =>
         val client = new ServiceToClient(service, new TBinaryProtocol.Factory())

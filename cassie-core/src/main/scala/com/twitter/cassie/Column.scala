@@ -67,7 +67,7 @@ object Column {
   }
 }
 
-case class Column[A, B](name: A, value: B, timestamp: Option[Long], ttl: Option[Duration]) {
+case class Column[+A, B](name: A, value: B, timestamp: Option[Long], ttl: Option[Duration]) {
 
   def this(name: A, value: B) = {
     this(name, value, None, None)

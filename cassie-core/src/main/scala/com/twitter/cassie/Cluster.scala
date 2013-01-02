@@ -18,10 +18,10 @@ import com.twitter.cassie.connection.{ CCluster, ClusterClientProvider, RetryPol
 import com.twitter.conversions.time._
 import com.twitter.finagle.stats.{ StatsReceiver, NullStatsReceiver }
 import com.twitter.finagle.tracing.{ Tracer, NullTracer }
-import com.twitter.logging.Logger
 import com.twitter.util.Duration
+import org.slf4j.LoggerFactory
 import java.net.{ SocketAddress, InetSocketAddress }
-import scala.collection.JavaConverters._
+import scala.collection.JavaConversions._
 
 /**
  * A Cassandra cluster.
@@ -31,7 +31,7 @@ import scala.collection.JavaConverters._
  *        to refresh its host list.
  * @param stats a finagle stats receiver
  */
-class Cluster(seedHosts: Set[String], seedPort: Int, stats: StatsReceiver) extends ClusterBase {
+class Cluster(seedHosts: Set[String], seedPort: Int, stats: StatsReceiver, tracer: Tracer.Factory) extends ClusterBase {
   private var mapHostsEvery: Duration = 10.minutes
 
   /**
@@ -40,20 +40,20 @@ class Cluster(seedHosts: Set[String], seedPort: Int, stats: StatsReceiver) exten
    *                  The port number is assumed to be 9160.
    */
   def this(seedHosts: String, stats: StatsReceiver = NullStatsReceiver) =
-    this(seedHosts.split(',').filter { !_.isEmpty }.toSet, 9160, stats)
+    this(seedHosts.split(',').filter { !_.isEmpty }.toSet, 9160, stats, NullTracer.factory)
 
   /**
    * @param seedHosts A comma separated list of seed hosts for a cluster. The rest of the
    *                  hosts can be found via mapping the cluser. See KeyspaceBuilder.mapHostsEvery.
    */
   def this(seedHosts: String, port: Int) =
-    this(seedHosts.split(',').filter { !_.isEmpty }.toSet, port, NullStatsReceiver)
+    this(seedHosts.split(',').filter { !_.isEmpty }.toSet, port, NullStatsReceiver, NullTracer.factory)
 
   /**
    * @param seedHosts A collection of seed host addresses. The port number is assumed to be 9160
    */
   def this(seedHosts: java.util.Collection[String]) =
-    this(seedHosts.asScala.toSet, 9160, NullStatsReceiver)
+    this(collectionAsScalaIterable(seedHosts).toSet, 9160, NullStatsReceiver, NullTracer.factory)
 
   /**
    * Returns a  [[com.twitter.cassie.KeyspaceBuilder]] instance.
@@ -62,14 +62,14 @@ class Cluster(seedHosts: Set[String], seedPort: Int, stats: StatsReceiver) exten
   def keyspace(name: String): KeyspaceBuilder = {
     val scopedStats = stats.scope("cassie").scope(name)
     val seedAddresses = seedHosts.map { host => new InetSocketAddress(host, seedPort) }.toSeq
-    val cluster = if (mapHostsEvery > 0)
+    val cluster = if (mapHostsEvery > 0.seconds)
       // either map the cluster for this keyspace
-      new ClusterRemapper(name, seedAddresses, mapHostsEvery, seedPort, statsReceiver = stats.scope("remapper"))
+      new ClusterRemapper(name, seedAddresses, mapHostsEvery, seedPort, stats.scope("remapper"), tracer)
     else
       // or connect directly to the hosts that were given as seeds
       new SocketAddressCluster(seedAddresses)
 
-    KeyspaceBuilder(cluster, name, scopedStats)
+    KeyspaceBuilder(cluster, name, scopedStats, tracer)
   }
 
   /**
@@ -91,7 +91,7 @@ trait ClusterBase {
 }
 
 object KeyspaceBuilder {
-  private val log = Logger.get(this.getClass)
+  private val log = LoggerFactory.getLogger(this.getClass)
 }
 
 
@@ -99,6 +99,7 @@ case class KeyspaceBuilder(
   cluster: CCluster[SocketAddress],
   name: String,
   stats: StatsReceiver,
+  tracer: Tracer.Factory,
   _retries: Int = 0,
   _timeout: Int = 5000,
   _requestTimeout: Int = 1000,
@@ -106,8 +107,8 @@ case class KeyspaceBuilder(
   _minConnectionsPerHost: Int = 1,
   _maxConnectionsPerHost: Int = 5,
   _hostConnectionMaxWaiters: Int = 100,
-  _tracerFactory: Tracer.Factory = NullTracer.factory,
-  _retryPolicy: RetryPolicy = RetryPolicy.Idempotent
+  _retryPolicy: RetryPolicy = RetryPolicy.Idempotent,
+  _failFast: Boolean = false
 ) {
 
   import KeyspaceBuilder._
@@ -134,10 +135,17 @@ case class KeyspaceBuilder(
       _maxConnectionsPerHost,
       _hostConnectionMaxWaiters,
       stats,
-      _tracerFactory,
-      _retryPolicy)
+      tracer,
+      _retryPolicy,
+      _failFast)
     new Keyspace(name, ccp, stats)
   }
+
+  /**
+   * In general, it is recommended that you set this to true.
+   * It is likely to become the default behavior in Finagle in the not too distant future.
+   */
+  def failFast(ff: Boolean): KeyspaceBuilder = copy(_failFast = ff)
 
   def timeout(t: Int): KeyspaceBuilder = copy(_timeout = t)
   def retries(r: Int): KeyspaceBuilder = copy(_retries = r)
@@ -162,7 +170,7 @@ case class KeyspaceBuilder(
   def reportStatsTo(r: StatsReceiver): KeyspaceBuilder = copy(stats = r)
 
   /** Set a tracer to collect request traces. */
-  def tracerFactory(t: Tracer.Factory): KeyspaceBuilder = copy(_tracerFactory = t)
+  def tracerFactory(t: Tracer.Factory): KeyspaceBuilder = copy(tracer = t)
 
   def hostConnectionMaxWaiters(i: Int): KeyspaceBuilder = copy(_hostConnectionMaxWaiters = i)
 }

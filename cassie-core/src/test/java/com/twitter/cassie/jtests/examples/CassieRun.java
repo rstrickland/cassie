@@ -76,7 +76,7 @@ public final class CassieRun {
     });
 
     f.apply();
-
+/*
     Future f2 = cass.columnsIteratee(2, "yay for me").foreach(new Function<Column<String, String>, scala.runtime.BoxedUnit>() {
       public scala.runtime.BoxedUnit apply(Column<String,String> column){
         info("Found Columns Iteratee: " + column);
@@ -85,7 +85,7 @@ public final class CassieRun {
     });
 
     f2.apply();
-
+*/
     info("removing a column");
     cass.removeColumn("yay for me", "motto").apply();
 
